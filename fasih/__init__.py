@@ -17,7 +17,7 @@ from .arabic import (
     wrap_ltr,
 )
 
-__version__ = "0.3.0"
+__version__ = "0.3.1"
 __all__ = [
     "normalize_arabic",
     "normalize_arabic_indic_digits",

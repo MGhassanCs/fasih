@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import ast
 import os
+import warnings
 from typing import Dict, List, Tuple
 
 from .findings import Finding, Severity
@@ -94,7 +95,11 @@ def scan(path, enable_arabic: bool = False, config: Config = None) -> ScanResult
             parse_errors.append((filepath, str(exc)))
             continue
         try:
-            tree = ast.parse(source, filename=filepath)
+            # Suppress SyntaxWarning/DeprecationWarning from parsing *other*
+            # people's code — we're analyzing it, not running it.
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore")
+                tree = ast.parse(source, filename=filepath)
         except SyntaxError as exc:
             parse_errors.append((filepath, f"SyntaxError: {exc}"))
             continue

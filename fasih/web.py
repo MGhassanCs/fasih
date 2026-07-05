@@ -21,6 +21,9 @@ from fasih.rules_engine import scan
 _PKG_DIR = os.path.dirname(fasih.__file__)
 _REPO_DIR = os.path.dirname(_PKG_DIR)
 _EXAMPLE = os.path.join(_REPO_DIR, "examples", "broken_agent_example.py")
+_HOME = os.path.expanduser("~")
+_DESKTOP = os.path.join(_HOME, "Desktop")
+_START_DIR = _DESKTOP if os.path.isdir(_DESKTOP) else _HOME
 
 _SEV = {
     Severity.CRITICAL: ("CRITICAL", "crit"),
@@ -65,6 +68,17 @@ button{padding:9px 18px;border-radius:8px;border:0;background:var(--accent);colo
 .quick{margin:6px 0 20px;display:flex;gap:8px;flex-wrap:wrap}
 .quick a{font-size:12.5px;color:var(--dim);text-decoration:none;padding:5px 11px;border:1px solid var(--line);border-radius:999px}
 .quick a:hover{color:var(--text);border-color:var(--accent)}
+.quick a.browse{color:var(--text);border-color:var(--accent)}
+.browser{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px 16px;margin:6px 0 18px}
+.crumbs{font:12.5px ui-monospace,Menlo,monospace;color:var(--dim);margin-bottom:12px;word-break:break-all}
+.crumbs a{color:var(--accent);text-decoration:none}
+.scanrow{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:12px}
+.scanbtn{background:var(--accent);color:#fff;font-weight:600;padding:8px 14px;border-radius:8px;text-decoration:none;font-size:14px}
+.pyhint{font-size:12.5px;color:var(--dim)}.pyhint.ok{color:var(--ok)}
+.dirs{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:6px}
+.dir{color:var(--text);text-decoration:none;padding:7px 10px;border:1px solid var(--line);border-radius:8px;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.dir:hover{border-color:var(--accent)}
+.dir.up{color:var(--dim)}
 .summary{display:flex;gap:8px;flex-wrap:wrap;margin:8px 0 18px;align-items:center}
 .chip{font-size:12.5px;padding:4px 11px;border-radius:999px;background:var(--panel2);border:1px solid var(--line);color:var(--dim)}
 .chip b{color:var(--text)}
@@ -130,8 +144,33 @@ def _reference():
     return '<h2>What it checks</h2><div class="ref">%s</div>' % "".join(rows)
 
 
+def _expand(path):
+    """Resolve ~ and env vars and trim whitespace, so a pasted `~/Desktop/x`
+    (which Python would NOT expand on its own) works."""
+    if not isinstance(path, str):
+        return path
+    return os.path.expanduser(os.path.expandvars(path.strip()))
+
+
+def _render(input_value, arabic, token, chips, body):
+    return _TEMPLATE % {
+        "style": _STYLE,
+        "path": html.escape(input_value),
+        "checked": "checked" if arabic else "",
+        "ex": urllib.parse.quote(_EXAMPLE),
+        "pkg": urllib.parse.quote(_PKG_DIR),
+        "start": urllib.parse.quote(_START_DIR),
+        "chips": chips,
+        "body": body,
+        "reference": _reference(),
+        "ver": html.escape(fasih.__version__),
+        "token": urllib.parse.quote(token),
+    }
+
+
 def render_page(path, arabic, token=""):
-    result = scan(path, enable_arabic=arabic)
+    expanded = _expand(path)
+    result = scan(expanded, enable_arabic=arabic)
     counts = result.counts()
 
     chips = ['<span class="chip"><b>%d</b> file(s)</span>' % result.files_scanned,
@@ -140,25 +179,66 @@ def render_page(path, arabic, token=""):
         if counts[sev]:
             chips.append('<span class="chip %s"><b>%d</b> %s</span>' % (cls, counts[sev], sev.value))
 
-    if result.files_scanned == 0:
-        body = '<div class="empty">No .py files found at that path.</div>'
+    if isinstance(expanded, str) and not os.path.exists(expanded):
+        body = ('<div class="empty">Path not found: <code>%s</code>.<br>'
+                'Paste a full path, or use <b>Browse folders</b> above.</div>' % html.escape(expanded))
+    elif result.files_scanned == 0:
+        body = ('<div class="empty">That folder has no <code>.py</code> files &mdash; fasih lints '
+                '<b>Python</b> (JS/TS is on the roadmap). Use <b>Browse folders</b> to find a Python '
+                'project, or try the example below.</div>')
     elif not result.findings:
         body = '<div class="ok">No issues found &#10003;</div>'
     else:
         body = "".join(_render_finding(f) for f in result.findings)
 
-    return _TEMPLATE % {
-        "style": _STYLE,
-        "path": html.escape(path),
-        "checked": "checked" if arabic else "",
-        "ex": urllib.parse.quote(_EXAMPLE),
-        "pkg": urllib.parse.quote(_PKG_DIR),
-        "chips": "".join(chips),
-        "body": body,
-        "reference": _reference(),
-        "ver": html.escape(fasih.__version__),
-        "token": urllib.parse.quote(token),
-    }
+    return _render(path, arabic, token, "".join(chips), body)
+
+
+def render_browse_page(current, arabic, token=""):
+    current = os.path.abspath(_expand(current) or _START_DIR)
+    chips = '<span class="chip">&#128193; browsing folders &mdash; open one, then <b>Scan this folder</b></span>'
+    return _render(current, arabic, token, chips, _render_browser(current, arabic, token))
+
+
+def _browse_link(target, arabic, token):
+    return "/?browse=%s&amp;arabic=%s&amp;token=%s" % (
+        urllib.parse.quote(target), "1" if arabic else "0", urllib.parse.quote(token))
+
+
+def _render_browser(current, arabic, token):
+    # breadcrumbs from filesystem root to current
+    crumbs = ['<a href="%s">/</a>' % _browse_link(os.path.sep, arabic, token)]
+    accum = ""
+    for piece in [p for p in current.split(os.path.sep) if p]:
+        accum = accum + os.path.sep + piece
+        crumbs.append('<a href="%s">%s</a>' % (_browse_link(accum, arabic, token), html.escape(piece)))
+
+    scan_btn = ('<a class="scanbtn" href="/?path=%s&amp;arabic=1&amp;token=%s">&#8681; Scan this folder</a>'
+                % (urllib.parse.quote(current), urllib.parse.quote(token)))
+
+    try:
+        entries = sorted(os.listdir(current), key=str.lower)
+    except OSError as exc:
+        return '<div class="browser"><div class="crumbs">%s</div><div class="empty">Cannot open this folder: %s</div></div>' % (
+            " / ".join(crumbs), html.escape(str(exc)))
+
+    subdirs = [d for d in entries if not d.startswith(".") and os.path.isdir(os.path.join(current, d))]
+    has_py = any(e.endswith(".py") for e in entries)
+    hint = ('<span class="pyhint ok">contains .py &mdash; scannable</span>' if has_py
+            else '<span class="pyhint">no .py directly here (may be in sub-folders)</span>')
+
+    rows = []
+    parent = os.path.dirname(current)
+    if parent and parent != current:
+        rows.append('<a class="dir up" href="%s">&#8598; ..</a>' % _browse_link(parent, arabic, token))
+    for d in subdirs:
+        rows.append('<a class="dir" href="%s">&#128193; %s</a>'
+                    % (_browse_link(os.path.join(current, d), arabic, token), html.escape(d)))
+    listing = "".join(rows) if rows else '<div class="empty">no sub-folders here</div>'
+
+    return ('<div class="browser"><div class="crumbs">%s</div>'
+            '<div class="scanrow">%s %s</div><div class="dirs">%s</div></div>') % (
+        " / ".join(crumbs), scan_btn, hint, listing)
 
 
 _TEMPLATE = """<!doctype html>
@@ -177,6 +257,7 @@ meaning &mdash; plus the <b>Arabic pipeline bugs that only ever break for Arabic
 <label class="chk"><input type="checkbox" name="arabic" value="1" %(checked)s> Arabic checks</label>
 <button type="submit">Scan</button></form>
 <div class="quick">
+<a class="browse" href="/?browse=%(start)s&amp;arabic=1&amp;token=%(token)s">&#128193; Browse folders&hellip;</a>
 <a href="/?path=%(ex)s&amp;arabic=1&amp;token=%(token)s">&#9656; the planted-bug example (10 findings)</a>
 <a href="/?path=%(pkg)s&amp;arabic=1&amp;token=%(token)s">&#9656; fasih's own source (clean)</a></div>
 <div class="summary">%(chips)s</div>
@@ -258,12 +339,14 @@ class _Handler(BaseHTTPRequestHandler):
             self._send(403, b"forbidden: open the URL printed by 'fasih serve' (missing/invalid token)", "text/plain")
             return
         token = getattr(self.server, "fasih_token", None) or ""
-        path = query.get("path", [_EXAMPLE])[0]
         arabic = query.get("arabic", ["1"])[0] in ("1", "true", "on")
         try:
-            page = render_page(path, arabic, token)
+            if "browse" in query:
+                page = render_browse_page(query.get("browse", [_START_DIR])[0], arabic, token)
+            else:
+                page = render_page(query.get("path", [_EXAMPLE])[0], arabic, token)
         except Exception as exc:  # never let one bad path kill the dashboard
-            page = "<pre>scan error: %s</pre>" % html.escape(repr(exc))
+            page = "<pre>error: %s</pre>" % html.escape(repr(exc))
         self._send(200, page.encode("utf-8"))
 
     def log_message(self, *args):

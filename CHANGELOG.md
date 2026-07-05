@@ -3,6 +3,20 @@
 All notable changes to `fasih` are documented here. This project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## [0.3.1]
+
+### Added
+- **Folder browser** in the dashboard — navigate from your Desktop/home with
+  breadcrumbs and click "Scan this folder" instead of typing paths. Flags which
+  folders contain `.py`.
+
+### Fixed
+- Dashboard now expands `~` and environment variables in paths (a pasted
+  `~/Desktop/project` no longer reports "no .py files"), and distinguishes
+  "path not found" from "folder has no .py files (fasih is Python-only)".
+- The scanner suppresses `SyntaxWarning`/`DeprecationWarning` while parsing
+  third-party files it merely analyzes.
+
 ## [0.3.0]
 
 ### Added

@@ -150,8 +150,10 @@ fasih serve        # -> http://localhost:8787
 ```
 
 A self-contained local page (standard library only) that runs the real scanner,
-explains every rule, flags the auto-fixable ones, and lets you point it at any
-file or folder. It is **locked down**: bound to loopback, validates the `Host`
+explains every rule, flags the auto-fixable ones, and lets you **browse your
+folders** (with a "Scan this folder" button) or type a path (`~` is expanded).
+Note that `fasih` scans **Python** (`.py`) files only. It is **locked down**:
+bound to loopback, validates the `Host`
 header (blocking DNS-rebinding), sends a strict `Content-Security-Policy` and
 `X-Frame-Options: DENY`, is GET-only and read-only, and — like the whole tool —
 never executes the code it scans. See [SECURITY.md](SECURITY.md).
@@ -176,7 +178,7 @@ CLI flags override the config; `--no-config` ignores it entirely.
 # .pre-commit-config.yaml
 repos:
   - repo: https://github.com/MGhassanCs/fasih
-    rev: v0.3.0
+    rev: v0.3.1
     hooks:
       - id: fasih
 ```

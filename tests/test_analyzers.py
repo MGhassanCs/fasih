@@ -489,6 +489,29 @@ def test_web_dashboard_renders():
     assert "No issues found" in clean
 
 
+def test_web_expands_tilde():
+    from fasih.web import _expand
+
+    assert _expand("  ~/x  ") == os.path.join(os.path.expanduser("~"), "x")
+
+
+def test_web_distinguishes_not_found_from_no_py(tmp_path):
+    from fasih.web import render_page
+
+    assert "Path not found" in render_page(str(tmp_path / "nope"), True, "t")
+    (tmp_path / "readme.md").write_text("hi", encoding="utf-8")
+    assert "no <code>.py</code> files" in render_page(str(tmp_path), True, "t")
+
+
+def test_web_folder_browser_lists_subdirs(tmp_path):
+    from fasih.web import render_browse_page
+
+    (tmp_path / "proj").mkdir()
+    page = render_browse_page(str(tmp_path), True, "t")
+    assert "Scan this folder" in page
+    assert "proj" in page and "browse=" in page
+
+
 # --- auto-fix ---------------------------------------------------------------
 
 def _apply(analyzer, src):
