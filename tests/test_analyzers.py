@@ -222,6 +222,15 @@ def test_normalize_arabic_indic_digits():
     assert int(normalize_arabic_indic_digits("٢٥")) == 25
 
 
+def test_normalize_fixes_ascii_only_regex_silent_loss():
+    # Python's int() accepts "٢٥", but an explicit [0-9] regex silently drops
+    # it — this is the real failure the digit normalizer prevents.
+    import re
+
+    assert re.findall(r"[0-9]+", "٢٥") == []  # silent data loss, no error
+    assert re.findall(r"[0-9]+", normalize_arabic_indic_digits("٢٥")) == ["25"]
+
+
 # --- end-to-end -------------------------------------------------------------
 
 def test_end_to_end_example_has_all_six_and_only_six():

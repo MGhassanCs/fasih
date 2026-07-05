@@ -33,9 +33,10 @@ broken Arabic because of the plumbing *around* the model:
 - `json.dumps(payload)` serializes Arabic as `\uXXXX` escapes, because
   `ensure_ascii` defaults to `True` — so the WhatsApp webhook / log / saved
   file carries mangled text.
-- `int(message.text)` raises `ValueError` the moment a user types `٢٥` instead
-  of `25`, because Arabic-Indic digits aren't ASCII — a bug that only ever
-  surfaces for Arabic users.
+- `int(message.text)` *looks* safe — Python even parses `٢٥` as `25` — but
+  `float("٣٫٥")` and `int("١٬٠٠٠")` raise on the Arabic decimal/thousands
+  separators, and an ASCII-only `[0-9]` regex silently drops Arabic digits
+  with no error at all. Bugs that only ever surface for Arabic users.
 
 That plumbing layer is exactly where I've shipped production bilingual agents
 (WhatsApp lead-qualification, Arabic/English quotations), and it's the layer
@@ -92,9 +93,11 @@ fasih scan examples/broken_agent_example.py --arabic -v
 The Arabic module also ships a genuinely useful runtime utility:
 
 ```python
+import re
 from fasih import normalize_arabic_indic_digits
 
-int(normalize_arabic_indic_digits("٢٥"))   # -> 25
+re.findall(r"[0-9]+", "٢٥")                                  # -> []       (silent data loss!)
+re.findall(r"[0-9]+", normalize_arabic_indic_digits("٢٥"))   # -> ["25"]
 ```
 
 ## Positioning: the layer nobody else lints

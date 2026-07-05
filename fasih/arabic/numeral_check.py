@@ -1,19 +1,24 @@
-"""AR-NUMERAL — parsing user text with int()/float() without normalizing
-Arabic-Indic digits first.
+"""AR-NUMERAL — parsing user numeric text without normalizing Arabic numerals.
 
-``int("٢٥")`` raises ``ValueError``: Python's ``int``/``float`` only parse
-ASCII ``0-9``. An Arabic-script user typing quantities, OTPs, prices or dates
-in a WhatsApp bot or a form will send ``٠-٩`` (Arabic-Indic) or ``۰-۹``
-(Extended Arabic-Indic, used for Persian/Urdu), and the parse crashes or the
-value is silently dropped.
+The naive assumption is that ``int("٢٥")`` crashes. It does not — Python's
+``int``/``float`` accept Unicode decimal digits, so Arabic-Indic (``٠-٩``) and
+Extended Arabic-Indic (``۰-۹``, Persian/Urdu) parse fine. The real failure modes
+are subtler, and worse for being silent:
 
-This module ships :func:`normalize_arabic_indic_digits` as a genuinely useful
-runtime utility (``from fasih import normalize_arabic_indic_digits``) *and* an
-analyzer that flags un-normalized ``int()``/``float()`` calls on things that
-look like user input. The "already normalizes" suppression is scoped to the
-enclosing function (and its enclosing scopes) — not the whole file — so an
-unrelated later function that happens to call a normalizer does not mask a real
-bug elsewhere.
+* ``float("٣٫٥")`` and ``int("١٬٠٠٠")`` **do** raise, because the Arabic decimal
+  (``٫`` U+066B) and thousands (``٬`` U+066C) separators aren't recognised — and
+  those appear in real Arabic-authored numbers.
+* ASCII-only downstream steps mishandle the value with no error at all: an
+  explicit ``[0-9]`` regex matches nothing (silent data loss), and many external
+  APIs and databases reject non-ASCII digits.
+
+So the fix is to normalize user numeric input to ASCII before parsing. This
+module ships :func:`normalize_arabic_indic_digits` for exactly that
+(``from fasih import normalize_arabic_indic_digits``) and an analyzer that flags
+un-normalized ``int()``/``float()`` calls on things that look like user input.
+The "already normalizes" suppression is scoped to the enclosing function (and
+its enclosing scopes) — not the whole file — so an unrelated later function that
+happens to call a normalizer does not mask a real bug elsewhere.
 """
 
 from __future__ import annotations
@@ -33,13 +38,15 @@ _DIGIT_MAP.update({ord(ch): str(i) for i, ch in enumerate(_EXT_ARABIC_INDIC)})
 
 def normalize_arabic_indic_digits(text: str) -> str:
     """Convert Arabic-Indic (٠-٩) and Extended Arabic-Indic (۰-۹) digits to
-    ASCII ``0-9`` so ``int()``/``float()`` and numeric comparisons work on
-    input typed by Arabic-script users. Non-digit characters are untouched.
+    ASCII ``0-9`` so downstream code that assumes ASCII digits — an explicit
+    ``[0-9]`` regex, an external API, a database, or a parser that chokes on
+    Arabic separators — handles Arabic-script numeric input correctly. Non-digit
+    characters are left untouched.
 
     >>> normalize_arabic_indic_digits("٢٠٢٦")
     '2026'
-    >>> int(normalize_arabic_indic_digits("الكمية: ٥".split()[-1]))
-    5
+    >>> import re; re.findall(r"[0-9]+", normalize_arabic_indic_digits("رقم ٥"))
+    ['5']
     """
     return text.translate(_DIGIT_MAP)
 
@@ -126,18 +133,23 @@ class ArabicNumeralAnalyzer(Analyzer):
             rule_id=self.rule_id,
             severity=Severity.MEDIUM,
             message=(
-                f"{fname}() parses user-supplied text without normalizing "
-                f"Arabic-Indic digits (٠-٩); Arabic numeral input will raise ValueError."
+                f"{fname}() parses user-supplied text without normalizing Arabic "
+                f"numerals (٠-٩) to ASCII first."
             ),
             file=filename,
             line=node.lineno,
             column=node.col_offset,
             why=(
-                "int('٢٥') raises ValueError — int()/float() only parse ASCII 0-9. When an "
-                "Arabic-script user types numerals (WhatsApp, forms, voice-to-text), the "
-                "parse crashes or the value is dropped, and the bug only shows up for "
+                "int()/float() do accept Arabic-Indic digits, so this often looks fine — "
+                "until it isn't. They still raise on the Arabic decimal and thousands "
+                "separators found in real Arabic numbers (float('٣٫٥'), int('١٬٠٠٠')), and "
+                "ASCII-only downstream steps fail silently: an explicit [0-9] regex matches "
+                "nothing and many APIs/DBs reject non-ASCII digits. It only breaks for "
                 "Arabic users."
             ),
-            fix="Normalize first, e.g. int(normalize_arabic_indic_digits(text)).",
+            fix=(
+                "Normalize to ASCII before parsing, e.g. "
+                "int(normalize_arabic_indic_digits(text)); handle the ٫/٬ separators too."
+            ),
             snippet=source_line(source, node.lineno),
         )

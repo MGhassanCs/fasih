@@ -9,7 +9,7 @@
 | MED | `ORPHANED-TOOL` | `examples/broken_agent_example.py:35` | Tool/fetcher `fetch_customer_history` is defined but never invoked or registered anywhere in the scanned project. |
 | MED | `STRUCTURE-NOT-SEMANTICS` | `examples/broken_agent_example.py:41` | Eval/grader `evaluate_answer_broken` only checks output *structure* (shape/length/keys), never whether the content is correct. |
 | MED | `AR-ENCODING` | `examples/broken_agent_example.py:56` | json.dumps()/dump() without ensure_ascii=False will escape Arabic text to \uXXXX. |
-| MED | `AR-NUMERAL` | `examples/broken_agent_example.py:62` | int() parses user-supplied text without normalizing Arabic-Indic digits (٠-٩); Arabic numeral input will raise ValueError. |
+| MED | `AR-NUMERAL` | `examples/broken_agent_example.py:63` | int() parses user-supplied text without normalizing Arabic numerals (٠-٩) to ASCII first. |
 
 ### `FAIL-OPEN-GUARD` — HIGH — `examples/broken_agent_example.py:25`
 
@@ -59,14 +59,14 @@ return json.dumps({"body": reply_text_ar})
 
 **Fix:** Pass ensure_ascii=False to json.dumps / json.dump.
 
-### `AR-NUMERAL` — MED — `examples/broken_agent_example.py:62`
+### `AR-NUMERAL` — MED — `examples/broken_agent_example.py:63`
 
-int() parses user-supplied text without normalizing Arabic-Indic digits (٠-٩); Arabic numeral input will raise ValueError.
+int() parses user-supplied text without normalizing Arabic numerals (٠-٩) to ASCII first.
 
 ```python
 return int(message.text)
 ```
 
-**Why it matters:** int('٢٥') raises ValueError — int()/float() only parse ASCII 0-9. When an Arabic-script user types numerals (WhatsApp, forms, voice-to-text), the parse crashes or the value is dropped, and the bug only shows up for Arabic users.
+**Why it matters:** int()/float() do accept Arabic-Indic digits, so this often looks fine — until it isn't. They still raise on the Arabic decimal and thousands separators found in real Arabic numbers (float('٣٫٥'), int('١٬٠٠٠')), and ASCII-only downstream steps fail silently: an explicit [0-9] regex matches nothing and many APIs/DBs reject non-ASCII digits. It only breaks for Arabic users.
 
-**Fix:** Normalize first, e.g. int(normalize_arabic_indic_digits(text)).
+**Fix:** Normalize to ASCII before parsing, e.g. int(normalize_arabic_indic_digits(text)); handle the ٫/٬ separators too.

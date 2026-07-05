@@ -58,7 +58,8 @@ def to_whatsapp_payload_broken(reply_text_ar):
 
 # --- BUG 6 · AR-NUMERAL ------------------------------------------------------
 def parse_quantity_broken(message):
-    # BUG: user may type Arabic-Indic digits e.g. "٣" → int() raises ValueError
+    # BUG: user's Arabic numerals break parsing (float("٣٫٥"), int("١٬٠٠٠")) and
+    # any ASCII-only downstream ([0-9] regex, APIs) — parse after normalizing
     return int(message.text)
 
 
