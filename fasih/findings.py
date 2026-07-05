@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import Enum
+from typing import Optional
 
 _RANK = {"low": 0, "medium": 1, "high": 2, "critical": 3}
 
@@ -47,10 +48,19 @@ class Finding:
     why: str = ""
     fix: str = ""
     snippet: str = ""
+    # Optional auto-fix: replace source bytes [fix_start, fix_end) with
+    # fix_replacement. Byte offsets, because ast column offsets are byte-based.
+    fix_start: Optional[int] = None
+    fix_end: Optional[int] = None
+    fix_replacement: Optional[str] = None
 
     @property
     def location(self) -> str:
         return f"{self.file}:{self.line}"
+
+    @property
+    def fixable(self) -> bool:
+        return self.fix_start is not None and self.fix_replacement is not None
 
     def to_dict(self) -> dict:
         return {
@@ -63,4 +73,5 @@ class Finding:
             "why": self.why,
             "fix": self.fix,
             "snippet": self.snippet,
+            "fixable": self.fixable,
         }

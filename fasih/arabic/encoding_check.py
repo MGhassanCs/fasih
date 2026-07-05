@@ -20,6 +20,7 @@ from typing import Iterable, List
 
 from ..findings import Finding, Severity
 from ..analyzers.base import Analyzer, source_line
+from ..fixes import add_kwarg_edit
 
 
 class ArabicEncodingAnalyzer(Analyzer):
@@ -46,6 +47,7 @@ class ArabicEncodingAnalyzer(Analyzer):
                 continue
             if self._is_safe(node):
                 continue
+            fix_start, fix_end, fix_text = add_kwarg_edit(source, node, "ensure_ascii=False")
             findings.append(
                 Finding(
                     rule_id=self.rule_id,
@@ -64,6 +66,9 @@ class ArabicEncodingAnalyzer(Analyzer):
                     ),
                     fix="Pass ensure_ascii=False to json.dumps / json.dump.",
                     snippet=source_line(source, node.lineno),
+                    fix_start=fix_start,
+                    fix_end=fix_end,
+                    fix_replacement=fix_text,
                 )
             )
         return findings

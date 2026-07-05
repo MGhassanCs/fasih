@@ -1,13 +1,20 @@
 # fasih
 
+[![CI](https://github.com/MGhassanCs/fasih/actions/workflows/ci.yml/badge.svg)](https://github.com/MGhassanCs/fasih/actions/workflows/ci.yml)
+[![Python](https://img.shields.io/badge/python-3.9%2B-blue)](https://www.python.org/)
+[![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
+
 **فصيح — "eloquent, clear."** A static linter for LLM agents and bilingual
 (Arabic/English) pipelines. It catches the reliability bugs that survive a
 green test suite, and the Arabic pipeline bugs that model-level benchmarks
-never look at.
+never look at — then **auto-fixes the mechanical ones**.
 
-`fasih` is pure AST/regex analysis: no API calls, no model inference, no
-network. It runs in well under a second on a laptop and has one runtime
-dependency (`rich`, for pretty output).
+`fasih` is **pure static analysis** — AST + regex, no API calls, no model
+inference, **no network, no AI** in the loop. It runs in well under a second on
+a laptop. Runtime dependencies: `rich` (terminal output) and, on Python < 3.11,
+`tomli` (TOML config). Ten rules, an auto-fixer, an Arabic normalization
+toolkit, a local dashboard, and a self-scan that reports zero findings on its
+own source (enforced in CI).
 
 ---
 
@@ -63,6 +70,7 @@ fasih scan path/to/project -v              # add why-it-matters + fix hints
 fasih scan path/to/project --format markdown --out report.md
 fasih scan path/to/project --format json   # machine-readable
 fasih scan path/to/project --fail-on high  # exit 1 in CI on high+ findings
+fasih serve                                # local web dashboard (stdlib only)
 ```
 
 Try it on the bundled fixture, which plants one of every bug and then fixes
@@ -70,6 +78,13 @@ each one:
 
 ```bash
 fasih scan examples/broken_agent_example.py --arabic -v
+```
+
+Or open the dashboard — a self-contained local page that runs the real scanner,
+explains each rule, and lets you point it at any file or folder:
+
+```bash
+fasih serve            # -> http://localhost:8787
 ```
 
 ## What it checks
@@ -85,19 +100,85 @@ fasih scan examples/broken_agent_example.py --arabic -v
 
 ### Arabic / bilingual pipeline (`--arabic`)
 
+This is the part that's genuinely hard to find elsewhere. Each of these is a bug
+that a top-of-leaderboard model can't save you from, because it lives in the
+plumbing — and each one *only ever breaks for Arabic users*, so it sails through
+an English-only test suite.
+
 | Rule | Severity | Catches |
 | --- | --- | --- |
-| `AR-ENCODING` | medium | `json.dumps()`/`dump()` without `ensure_ascii=False`, which escapes Arabic to `\uXXXX`. |
-| `AR-NUMERAL` | medium | `int()`/`float()` on user-supplied text without normalizing Arabic-Indic digits (`٠-٩`, `۰-۹`) first. |
+| `AR-NORMALIZE` ⭐ | medium | Matching Arabic text with `==` / `in` / `.startswith()` without normalizing. The same word has many spellings — alef variants (أ إ آ → ا), alef-maqsura vs ya (ى/ي), ta-marbuta vs ha (ة/ه), tatweel (ـ), and diacritics — so a raw compare silently misses. Breaks intent detection, keyword guards, routing, dedup. |
+| `AR-ENCODING` | medium | `json.dumps()` / `dump()` without `ensure_ascii=False`, which escapes Arabic to `\uXXXX` in payloads, logs and files. |
+| `AR-NUMERAL` | medium | `int()`/`float()` on user text without normalizing Arabic numerals. Python accepts `٢٥`, but `float("٣٫٥")` crashes on the Arabic separators and an ASCII `[0-9]` regex silently drops Arabic digits. |
+| `AR-FILE-ENCODING` | medium | `open(f, "w")` / `Path.write_text` without `encoding="utf-8"` — Arabic then depends on the machine's locale (mojibake or a crash). |
+| `AR-ENCODE-ASCII` | medium | `text.encode("ascii")` / `"latin-1"` — cannot represent Arabic; raises `UnicodeEncodeError`. |
+| `AR-BIDI` | low | A string literal mixing Arabic with Latin/numbers without bidi isolation — renders out of order (`"الحالة: OK"`). Ships `wrap_ltr()`. |
 
-The Arabic module also ships a genuinely useful runtime utility:
+The `--arabic` module also ships a real, reusable **normalization toolkit** — the
+same functions the rules point you at:
 
 ```python
-import re
-from fasih import normalize_arabic_indic_digits
+from fasih import normalize_arabic, strip_tashkeel, strip_tatweel
 
-re.findall(r"[0-9]+", "٢٥")                                  # -> []       (silent data loss!)
-re.findall(r"[0-9]+", normalize_arabic_indic_digits("٢٥"))   # -> ["25"]
+# "answer" with a different alef (إ vs ا) and ta-marbuta (ة vs ه) — a raw == misses it:
+normalize_arabic("إجابة") == normalize_arabic("اجابه")   # -> True
+
+# strip_tashkeel() drops diacritics (harakat/tanwin); strip_tatweel() drops the ـ kashida.
+```
+
+## Auto-fix
+
+The mechanical findings fix themselves. `--diff` previews, `--fix` applies:
+
+```bash
+fasih scan path/to/project --arabic --diff    # show the patch, change nothing
+fasih scan path/to/project --arabic --fix     # apply it in place
+```
+
+Currently auto-fixable: `AR-ENCODING` (adds `ensure_ascii=False`),
+`AR-FILE-ENCODING` (adds `encoding="utf-8"`), `AR-ENCODE-ASCII` (switches to
+`utf-8`). Fixes are computed as **byte-precise** span edits (Python's AST column
+offsets are byte offsets, so this is correct even when Arabic precedes the call),
+applied atomically, and the result is re-parsed before it's written — `fasih`
+never leaves broken source on disk. Everything else ships a written fix hint but
+is left for you, because it needs judgment.
+
+## Dashboard
+
+```bash
+fasih serve        # -> http://localhost:8787
+```
+
+A self-contained local page (standard library only) that runs the real scanner,
+explains every rule, flags the auto-fixable ones, and lets you point it at any
+file or folder. It is **locked down**: bound to loopback, validates the `Host`
+header (blocking DNS-rebinding), sends a strict `Content-Security-Policy` and
+`X-Frame-Options: DENY`, is GET-only and read-only, and — like the whole tool —
+never executes the code it scans. See [SECURITY.md](SECURITY.md).
+
+## Configuration
+
+Drop a `[tool.fasih]` table in `pyproject.toml` (or a `.fasih.toml`):
+
+```toml
+[tool.fasih]
+arabic = true                # enable the Arabic module by default
+fail_on = "high"             # default CI threshold
+disable = ["AR-BIDI"]        # turn rules off
+ignore = ["**/migrations/*"] # skip path globs
+```
+
+CLI flags override the config; `--no-config` ignores it entirely.
+
+## Pre-commit
+
+```yaml
+# .pre-commit-config.yaml
+repos:
+  - repo: https://github.com/MGhassanCs/fasih
+    rev: v0.3.0
+    hooks:
+      - id: fasih
 ```
 
 ## Positioning: the layer nobody else lints

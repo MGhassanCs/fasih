@@ -65,11 +65,16 @@ def render_terminal(result, verbose: bool = False) -> None:
             header.append(f.rule_id, style="bold")
             header.append("  ")
             header.append(f"{_rel(f.file)}:{f.line}", style="cyan")
+            if f.fixable:
+                header.append("  ⚡ fixable", style="green")
             console.print(header)
             console.print(Text("       " + f.message, style="default"))
             console.print()
 
     console.print(Text(_summary_text(result), style="dim"))
+    nfix = sum(1 for f in result.findings if f.fixable)
+    if nfix:
+        console.print(Text(f"{nfix} auto-fixable — apply with --fix (preview with --diff)", style="green"))
     _print_parse_errors(console, result)
 
 
@@ -124,6 +129,10 @@ def render_markdown(result) -> str:
     counts = result.counts()
     lines: List[str] = ["# fasih report", ""]
     lines.append(f"**{_summary_text(result)}**")
+    nfix = sum(1 for f in result.findings if f.fixable)
+    if nfix:
+        lines.append("")
+        lines.append(f"_{nfix} auto-fixable — run `fasih scan <path> --fix`._")
     lines.append("")
     if result.findings:
         lines.append("| Severity | Rule | Location | Issue |")

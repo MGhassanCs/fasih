@@ -1,0 +1,7 @@
+- id: fasih
+  name: fasih (agent + Arabic pipeline linter)
+  description: Lint LLM agents and Arabic/bilingual pipelines for reliability and Arabic bugs.
+  entry: fasih scan --arabic --fail-on high
+  language: python
+  types: [python]
+  require_serial: true

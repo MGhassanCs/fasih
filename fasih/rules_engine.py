@@ -12,12 +12,16 @@ import os
 from typing import Dict, List, Tuple
 
 from .findings import Finding, Severity
+from .config import Config
 from .analyzers.fail_open import FailOpenAnalyzer
 from .analyzers.orphaned_tools import OrphanedToolAnalyzer
 from .analyzers.eval_structure import EvalStructureAnalyzer
 from .analyzers.secrets import SecretsAnalyzer
 from .arabic.encoding_check import ArabicEncodingAnalyzer
 from .arabic.numeral_check import ArabicNumeralAnalyzer
+from .arabic.normalize_check import ArabicNormalizeAnalyzer
+from .arabic.io_check import ArabicTextIoAnalyzer
+from .arabic.bidi_check import ArabicBidiAnalyzer
 
 _SKIP_DIRS = {
     ".git", "__pycache__", ".venv", "venv", "env", "node_modules", "build",
@@ -31,7 +35,13 @@ def _core_analyzers():
 
 
 def _arabic_analyzers():
-    return [ArabicEncodingAnalyzer(), ArabicNumeralAnalyzer()]
+    return [
+        ArabicEncodingAnalyzer(),
+        ArabicNumeralAnalyzer(),
+        ArabicNormalizeAnalyzer(),
+        ArabicTextIoAnalyzer(),
+        ArabicBidiAnalyzer(),
+    ]
 
 
 def iter_python_files(path: str):
@@ -64,11 +74,17 @@ class ScanResult:
         return max(self.findings, key=lambda f: f.severity.rank).severity
 
 
-def scan(path: str, enable_arabic: bool = False) -> ScanResult:
+def scan(path, enable_arabic: bool = False, config: Config = None) -> ScanResult:
+    """Scan a path (str) or several paths (list of str)."""
+    config = config or Config()
     analyzers = _core_analyzers() + (_arabic_analyzers() if enable_arabic else [])
     findings: List[Finding] = []
     parse_errors: List[Tuple[str, str]] = []
-    files = list(iter_python_files(path))
+    paths = [path] if isinstance(path, str) else list(path)
+    collected = []
+    for one in paths:
+        collected.extend(f for f in iter_python_files(one) if not config.is_ignored(f))
+    files = list(dict.fromkeys(collected))  # de-dupe, keep order
 
     for filepath in files:
         try:
@@ -89,5 +105,6 @@ def scan(path: str, enable_arabic: bool = False) -> ScanResult:
     for analyzer in analyzers:
         findings.extend(analyzer.finalize())
 
+    findings = [f for f in findings if config.allows(f.rule_id)]
     findings.sort(key=lambda f: (-f.severity.rank, f.file, f.line, f.rule_id))
     return ScanResult(findings, len(files), parse_errors)

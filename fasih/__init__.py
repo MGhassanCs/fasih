@@ -8,7 +8,22 @@ production pipeline layer that model-level benchmarks don't: JSON encoding,
 Arabic-Indic numeral parsing, and more.
 """
 
-from .arabic import normalize_arabic_indic_digits
+from .arabic import (
+    isolate,
+    normalize_arabic,
+    normalize_arabic_indic_digits,
+    strip_tashkeel,
+    strip_tatweel,
+    wrap_ltr,
+)
 
-__version__ = "0.1.0"
-__all__ = ["normalize_arabic_indic_digits", "__version__"]
+__version__ = "0.3.0"
+__all__ = [
+    "normalize_arabic",
+    "normalize_arabic_indic_digits",
+    "strip_tashkeel",
+    "strip_tatweel",
+    "wrap_ltr",
+    "isolate",
+    "__version__",
+]

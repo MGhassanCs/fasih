@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "fasih"
-version = "0.1.0"
+version = "0.3.0"
 description = "A static linter for LLM agents and bilingual (Arabic/English) pipelines."
 readme = "README.md"
 requires-python = ">=3.9"
@@ -21,7 +21,10 @@ classifiers = [
     "Programming Language :: Python :: 3",
     "Topic :: Software Development :: Quality Assurance",
 ]
-dependencies = ["rich>=13.0"]
+dependencies = [
+    "rich>=13.0",
+    "tomli>=1.1.0; python_version < '3.11'",  # TOML config on Python < 3.11
+]
 
 [project.optional-dependencies]
 dev = ["pytest>=7.0"]
@@ -38,3 +41,7 @@ packages = ["fasih"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+
+# fasih dogfoods its own config: the Arabic module is on by default here.
+[tool.fasih]
+arabic = true

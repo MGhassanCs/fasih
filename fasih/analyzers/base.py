@@ -43,6 +43,20 @@ def source_line(source: str, lineno: int) -> str:
     return ""
 
 
+def iter_own_scope(scope: ast.AST):
+    """Yield every node in ``scope``'s body WITHOUT descending into nested
+    function/lambda scopes (those are recursed into separately). Used by the
+    analyzers whose "already handled here" suppression is scoped to the enclosing
+    function rather than the whole file."""
+    stack = list(ast.iter_child_nodes(scope))
+    while stack:
+        node = stack.pop()
+        yield node
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda)):
+            continue
+        stack.extend(ast.iter_child_nodes(node))
+
+
 def call_name(func: ast.AST) -> str:
     """Best-effort dotted name for a call target, e.g. ``a.b.c`` for
     ``a.b.c(...)`` or ``open`` for ``open(...)``. Returns "" if it can't be

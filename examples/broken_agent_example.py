@@ -1,11 +1,11 @@
 """A deliberately broken mini "agent".
 
 The TOP half plants exactly one instance of every bug fasih detects; the
-BOTTOM half does the same six things correctly. Running
+BOTTOM half does the same ten things correctly. Running
 
     fasih scan examples/broken_agent_example.py --arabic
 
-reports exactly six findings, all in the top half. This file is a static
+reports exactly ten findings, all in the top half. This file is a static
 fixture — it is scanned, not executed, so a few names are intentionally left
 undefined (marked ``noqa``).
 """
@@ -63,8 +63,33 @@ def parse_quantity_broken(message):
     return int(message.text)
 
 
+# --- BUG 7 · AR-NORMALIZE ----------------------------------------------------
+def is_confirmation_broken(message):
+    # BUG: "نعم" typed with a diacritic or a different alef silently won't match
+    return message.strip() == "نعم"
+
+
+# --- BUG 8 · AR-FILE-ENCODING ------------------------------------------------
+def save_reply_broken(reply_text_ar):
+    # BUG: no encoding= — Arabic then depends on the machine's locale
+    with open("reply.txt", "w") as fh:
+        fh.write(reply_text_ar)
+
+
+# --- BUG 9 · AR-ENCODE-ASCII -------------------------------------------------
+def to_bytes_broken(reply_text_ar):
+    # BUG: ascii can't represent Arabic → UnicodeEncodeError
+    return reply_text_ar.encode("ascii")
+
+
+# --- BUG 10 · AR-BIDI --------------------------------------------------------
+def status_label_broken():
+    # BUG: Latin "OK" inside Arabic RTL text can render out of order
+    return "الحالة: OK"
+
+
 # =========================================================================
-#  FIXED  — the same six, done right (fasih reports nothing here)
+#  FIXED  — the same ten, done right (fasih reports nothing here)
 # =========================================================================
 
 
@@ -101,3 +126,26 @@ def parse_quantity_fixed(message):
     from fasih import normalize_arabic_indic_digits
 
     return int(normalize_arabic_indic_digits(message.text))
+
+
+def is_confirmation_fixed(message):
+    from fasih import normalize_arabic
+
+    # normalize BOTH sides → variant spellings of "نعم" all match
+    return normalize_arabic(message) == normalize_arabic("نعم")
+
+
+def save_reply_fixed(reply_text_ar):
+    with open("reply.txt", "w", encoding="utf-8") as fh:
+        fh.write(reply_text_ar)
+
+
+def to_bytes_fixed(reply_text_ar):
+    return reply_text_ar.encode("utf-8")
+
+
+def status_label_fixed():
+    from fasih import wrap_ltr
+
+    # isolate the LTR run so it keeps its place in the RTL sentence
+    return "الحالة: " + wrap_ltr("OK")
