@@ -11,6 +11,9 @@ from __future__ import annotations
 import html
 import os
 import secrets
+import shutil
+import subprocess
+import sys
 import urllib.parse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
@@ -24,6 +27,43 @@ _EXAMPLE = os.path.join(_REPO_DIR, "examples", "broken_agent_example.py")
 _HOME = os.path.expanduser("~")
 _DESKTOP = os.path.join(_HOME, "Desktop")
 _START_DIR = _DESKTOP if os.path.isdir(_DESKTOP) else _HOME
+_PICKER_NAME = "Finder" if sys.platform == "darwin" else ("Explorer" if os.name == "nt" else "file picker")
+
+
+def _pick_folder():
+    """Open the OS-native folder chooser and return the chosen path, or None if
+    the user cancels or no picker is available.
+
+    Security: each command is a FIXED literal with no interpolation, run as an
+    argument list (never ``shell=True``), so no user/attacker input can reach a
+    shell. Only reachable behind the token + loopback + same-origin checks.
+    """
+    try:
+        if sys.platform == "darwin":
+            script = 'POSIX path of (choose folder with prompt "Choose a folder for fasih to scan")'
+            proc = subprocess.run(["osascript", "-e", script], capture_output=True, text=True, timeout=300)
+            return (proc.stdout.strip() or None) if proc.returncode == 0 else None
+        if os.name == "nt":
+            ps = (
+                "Add-Type -AssemblyName System.Windows.Forms;"
+                "$d = New-Object System.Windows.Forms.FolderBrowserDialog;"
+                "$d.Description = 'Choose a folder for fasih to scan';"
+                "if ($d.ShowDialog() -eq 'OK') { [Console]::Out.Write($d.SelectedPath) }"
+            )
+            proc = subprocess.run(
+                ["powershell", "-NoProfile", "-STA", "-Command", ps],
+                capture_output=True, text=True, timeout=300,
+            )
+            return proc.stdout.strip() or None
+        if shutil.which("zenity"):
+            proc = subprocess.run(
+                ["zenity", "--file-selection", "--directory", "--title=Choose a folder for fasih to scan"],
+                capture_output=True, text=True, timeout=300,
+            )
+            return (proc.stdout.strip() or None) if proc.returncode == 0 else None
+        return None
+    except (OSError, subprocess.SubprocessError):
+        return None
 
 _SEV = {
     Severity.CRITICAL: ("CRITICAL", "crit"),
@@ -160,6 +200,7 @@ def _render(input_value, arabic, token, chips, body):
         "ex": urllib.parse.quote(_EXAMPLE),
         "pkg": urllib.parse.quote(_PKG_DIR),
         "start": urllib.parse.quote(_START_DIR),
+        "picker": html.escape(_PICKER_NAME),
         "chips": chips,
         "body": body,
         "reference": _reference(),
@@ -257,9 +298,10 @@ meaning &mdash; plus the <b>Arabic pipeline bugs that only ever break for Arabic
 <label class="chk"><input type="checkbox" name="arabic" value="1" %(checked)s> Arabic checks</label>
 <button type="submit">Scan</button></form>
 <div class="quick">
-<a class="browse" href="/?browse=%(start)s&amp;arabic=1&amp;token=%(token)s">&#128193; Browse folders&hellip;</a>
-<a href="/?path=%(ex)s&amp;arabic=1&amp;token=%(token)s">&#9656; the planted-bug example (10 findings)</a>
-<a href="/?path=%(pkg)s&amp;arabic=1&amp;token=%(token)s">&#9656; fasih's own source (clean)</a></div>
+<a class="browse" href="/pick?arabic=1&amp;token=%(token)s">&#128194; Browse folders&hellip; (opens %(picker)s)</a>
+<a href="/?browse=%(start)s&amp;arabic=1&amp;token=%(token)s">&#128193; or browse in-page</a>
+<a href="/?path=%(ex)s&amp;arabic=1&amp;token=%(token)s">&#9656; the example (10 findings)</a>
+<a href="/?path=%(pkg)s&amp;arabic=1&amp;token=%(token)s">&#9656; fasih's own source</a></div>
 <div class="summary">%(chips)s</div>
 %(body)s
 %(reference)s
@@ -323,6 +365,17 @@ class _Handler(BaseHTTPRequestHandler):
         if body:
             self.wfile.write(body)
 
+    def _redirect(self, location: str):
+        self.send_response(303)
+        self.send_header("Location", location)  # location is urllib-quoted, so no header injection
+        self.send_header("Content-Length", "0")
+        self.send_header("Content-Security-Policy", _CSP)
+        self.send_header("X-Content-Type-Options", "nosniff")
+        self.send_header("X-Frame-Options", "DENY")
+        self.send_header("Referrer-Policy", "no-referrer")
+        self.send_header("Cache-Control", "no-store")
+        self.end_headers()
+
     def do_GET(self):
         if not self._host_allowed() or self._is_cross_site():
             self._send(403, b"forbidden", "text/plain")
@@ -331,7 +384,7 @@ class _Handler(BaseHTTPRequestHandler):
         if parsed.path == "/favicon.ico":
             self._send(204, b"")
             return
-        if parsed.path != "/":
+        if parsed.path not in ("/", "/pick"):
             self._send(404, b"not found", "text/plain")
             return
         query = urllib.parse.parse_qs(parsed.query)
@@ -340,6 +393,17 @@ class _Handler(BaseHTTPRequestHandler):
             return
         token = getattr(self.server, "fasih_token", None) or ""
         arabic = query.get("arabic", ["1"])[0] in ("1", "true", "on")
+        ar = "1" if arabic else "0"
+
+        if parsed.path == "/pick":
+            chosen = _pick_folder()
+            if chosen:
+                dest = "/?path=%s&arabic=%s&token=%s" % (urllib.parse.quote(chosen), ar, urllib.parse.quote(token))
+            else:  # cancelled or no native picker — fall back to the in-page browser
+                dest = "/?browse=%s&arabic=%s&token=%s" % (urllib.parse.quote(_START_DIR), ar, urllib.parse.quote(token))
+            self._redirect(dest)
+            return
+
         try:
             if "browse" in query:
                 page = render_browse_page(query.get("browse", [_START_DIR])[0], arabic, token)

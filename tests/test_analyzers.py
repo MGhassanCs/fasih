@@ -447,6 +447,30 @@ def test_dashboard_requires_token_when_configured():
         server.server_close()
 
 
+def test_dashboard_native_picker_redirects(monkeypatch):
+    import threading
+    from http.server import ThreadingHTTPServer
+    import fasih.web as web
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), web._Handler)
+    server.fasih_token = "tok"
+    port = server.server_address[1]
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    try:
+        # a picked folder -> 303 redirect to a scan of that path
+        monkeypatch.setattr(web, "_pick_folder", lambda: "/tmp/picked proj")
+        resp = _raw_get(port, "localhost", "/pick?arabic=1&token=tok")
+        assert _status(resp) == "303" and "Location: /?path=" in resp and "picked" in resp
+        # cancel / no picker -> 303 back to the in-page browser
+        monkeypatch.setattr(web, "_pick_folder", lambda: None)
+        assert "browse=" in _raw_get(port, "localhost", "/pick?arabic=1&token=tok")
+        # /pick still needs the token
+        assert _status(_raw_get(port, "localhost", "/pick")) == "403"
+    finally:
+        server.shutdown()
+        server.server_close()
+
+
 # --- end-to-end -------------------------------------------------------------
 
 def test_end_to_end_example_has_all_ten_and_only_ten():

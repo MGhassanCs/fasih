@@ -3,6 +3,15 @@
 All notable changes to `fasih` are documented here. This project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## [0.3.2]
+
+### Added
+- **Native folder picker** in the dashboard — "Browse folders…" now opens the OS
+  dialog (Finder on macOS, Explorer on Windows, zenity on Linux) and scans the
+  chosen folder. The local server pops the dialog and hands the real path back;
+  the in-page browser remains as a fallback. Fixed commands, no shell, behind the
+  token + loopback + cross-site checks.
+
 ## [0.3.1]
 
 ### Added

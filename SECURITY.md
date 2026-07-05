@@ -33,6 +33,11 @@ The local dashboard is hardened for a developer workstation:
   `Referrer-Policy: no-referrer`, `Cache-Control: no-store`.
 - **GET-only and read-only.** The dashboard runs the scanner and renders HTML;
   it has no endpoint that modifies files. All rendered values are HTML-escaped.
+- **Native folder picker (`/pick`).** Opens the OS folder dialog (Finder /
+  Explorer / zenity) via a **fixed command with no interpolation**, run as an
+  argument list (never `shell=True`), so no user/attacker input reaches a shell.
+  It is behind the same token + loopback + cross-site checks, and the returned
+  path is URL-quoted before use (no header injection).
 
 Note: the dashboard will scan any path you ask it to and show source-line
 snippets, so run it on machines and code you trust. It is a local dev tool, not

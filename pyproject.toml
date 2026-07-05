@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "fasih"
-version = "0.3.1"
+version = "0.3.2"
 description = "A static linter for LLM agents and bilingual (Arabic/English) pipelines."
 readme = "README.md"
 requires-python = ">=3.9"
