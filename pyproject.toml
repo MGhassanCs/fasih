@@ -1,0 +1,40 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "fasih"
+version = "0.1.0"
+description = "A static linter for LLM agents and bilingual (Arabic/English) pipelines."
+readme = "README.md"
+requires-python = ">=3.9"
+license = "MIT"
+authors = [{ name = "Mohammed Ghassan" }]
+keywords = [
+    "llm", "agents", "reliability", "linter", "static-analysis",
+    "guardrails", "arabic", "i18n", "evals",
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Topic :: Software Development :: Quality Assurance",
+]
+dependencies = ["rich>=13.0"]
+
+[project.optional-dependencies]
+dev = ["pytest>=7.0"]
+
+[project.scripts]
+fasih = "fasih.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/MGhassanCs/fasih"
+Issues = "https://github.com/MGhassanCs/fasih/issues"
+
+[tool.hatch.build.targets.wheel]
+packages = ["fasih"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
